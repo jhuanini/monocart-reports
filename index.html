@@ -10,17 +10,83 @@
     li { margin: 10px 0; }
     a { color: #0066cc; text-decoration: none; font-size: 16px; }
     a:hover { text-decoration: underline; }
+    .loading { color: #999; font-style: italic; }
+    .error { color: #cc0000; }
   </style>
 </head>
 <body>
   <h1>QA Test Reports</h1>
+  <div id="reports"><p class="loading">Loading reports...</p></div>
 
-  <!-- Latest date first — add new date sections above older ones -->
-  <h2>April 7, 2026</h2>
-  <ul>
-    <li>📋 <a href="04-07-2026/bo-statement-order-passed/">BO Statement Orders (Passed)</a></li>
-    <li>📋 <a href="04-07-2026/maker-statement-order-passed/">Maker Statement Orders (Passed)</a></li>
-  </ul>
+  <script>
+    const REPO = 'jhuanini/monocart-reports';
+    const BRANCH = 'main';
+    const API = `https://api.github.com/repos/${REPO}/contents`;
 
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+      return res.json();
+    }
+
+    function parseDate(folderName) {
+      // Expects MM-DD-YYYY
+      const [mm, dd, yyyy] = folderName.split('-');
+      return new Date(`${yyyy}-${mm}-${dd}`);
+    }
+
+    function formatDate(folderName) {
+      const date = parseDate(folderName);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    function isDateFolder(name) {
+      return /^\d{2}-\d{2}-\d{4}$/.test(name);
+    }
+
+    function formatReportTitle(name) {
+      return name
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+
+    async function buildReports() {
+      const container = document.getElementById('reports');
+      try {
+        const root = await fetchJSON(`${API}?ref=${BRANCH}`);
+        const dateFolders = root
+          .filter(item => item.type === 'dir' && isDateFolder(item.name))
+          .sort((a, b) => parseDate(b.name) - parseDate(a.name)); // latest first
+
+        if (dateFolders.length === 0) {
+          container.innerHTML = '<p class="error">No report folders found.</p>';
+          return;
+        }
+
+        let html = '';
+        for (const dateFolder of dateFolders) {
+          const reports = await fetchJSON(`${API}/${dateFolder.name}?ref=${BRANCH}`);
+          const reportDirs = reports.filter(item => item.type === 'dir');
+
+          if (reportDirs.length === 0) continue;
+
+          html += `<h2>${formatDate(dateFolder.name)}</h2><ul>`;
+          for (const report of reportDirs) {
+            const href = `${dateFolder.name}/${report.name}/`;
+            const title = formatReportTitle(report.name);
+            html += `<li>📋 <a href="${href}">${title}</a></li>`;
+          }
+          html += `</ul>`;
+        }
+
+        container.innerHTML = html || '<p class="error">No reports found.</p>';
+      } catch (err) {
+        container.innerHTML = `<p class="error">Failed to load reports: ${err.message}</p>`;
+      }
+    }
+
+    buildReports();
+  </script>
 </body>
 </html>
