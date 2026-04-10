@@ -5,13 +5,36 @@
   <style>
     body { font-family: sans-serif; padding: 40px; }
     h1 { color: #333; }
-    h2 { color: #666; margin-top: 30px; }
     ul { list-style: none; padding: 0; }
     li { margin: 10px 0; }
     a { color: #0066cc; text-decoration: none; font-size: 16px; }
     a:hover { text-decoration: underline; }
     .loading { color: #999; font-style: italic; }
     .error { color: #cc0000; }
+
+    details { margin-top: 30px; }
+    summary {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #666;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before {
+      content: '▶';
+      font-size: 0.7em;
+      color: #999;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+    details[open] summary::before {
+      transform: rotate(90deg);
+    }
   </style>
 </head>
 <body>
@@ -30,7 +53,6 @@
     }
 
     function parseDate(folderName) {
-      // Expects MM-DD-YYYY
       const [mm, dd, yyyy] = folderName.split('-');
       return new Date(`${yyyy}-${mm}-${dd}`);
     }
@@ -38,6 +60,16 @@
     function formatDate(folderName) {
       const date = parseDate(folderName);
       return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    function isToday(folderName) {
+      const folder = parseDate(folderName);
+      const today = new Date();
+      return (
+        folder.getFullYear() === today.getFullYear() &&
+        folder.getMonth() === today.getMonth() &&
+        folder.getDate() === today.getDate()
+      );
     }
 
     function isDateFolder(name) {
@@ -57,7 +89,7 @@
         const root = await fetchJSON(`${API}?ref=${BRANCH}`);
         const dateFolders = root
           .filter(item => item.type === 'dir' && isDateFolder(item.name))
-          .sort((a, b) => parseDate(b.name) - parseDate(a.name)); // latest first
+          .sort((a, b) => parseDate(b.name) - parseDate(a.name));
 
         if (dateFolders.length === 0) {
           container.innerHTML = '<p class="error">No report folders found.</p>';
@@ -68,16 +100,19 @@
         for (const dateFolder of dateFolders) {
           const reports = await fetchJSON(`${API}/${dateFolder.name}?ref=${BRANCH}`);
           const reportDirs = reports.filter(item => item.type === 'dir');
-
           if (reportDirs.length === 0) continue;
 
-          html += `<h2>${formatDate(dateFolder.name)}</h2><ul>`;
+          const open = isToday(dateFolder.name) ? 'open' : '';
+
+          html += `<details ${open}>`;
+          html += `<summary>${formatDate(dateFolder.name)}</summary>`;
+          html += `<ul>`;
           for (const report of reportDirs) {
             const href = `${dateFolder.name}/${report.name}/`;
             const title = formatReportTitle(report.name);
             html += `<li>📋 <a href="${href}">${title}</a></li>`;
           }
-          html += `</ul>`;
+          html += `</ul></details>`;
         }
 
         container.innerHTML = html || '<p class="error">No reports found.</p>';
