@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>QA Reports</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; }
+    h1 { color: #333; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 10px 0; }
+    a { color: #0066cc; text-decoration: none; font-size: 16px; }
+    a:hover { text-decoration: underline; }
+    .loading { color: #999; font-style: italic; }
+    .error { color: #cc0000; }
+    .back { margin-bottom: 20px; display: inline-block; font-size: 14px; }
+    .date-heading { font-size: 1.5em; font-weight: bold; color: #333; margin-bottom: 10px; }
+
+    details { margin-top: 30px; }
+    summary {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #666;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before {
+      content: '▶';
+      font-size: 0.7em;
+      color: #999;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+    details[open] summary::before {
+      transform: rotate(90deg);
+    }
+    summary a {
+      color: #0066cc;
+      text-decoration: none;
+      font-size: 1em;
+    }
+    summary a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <h1>QA Test Reports</h1>
+  <div id="reports"><p class="loading">Loading reports...</p></div>
+
+  <script>
+    const REPO = 'jhuanini/monocart-reports';
+    const BRANCH = 'main';
+    const API = `https://api.github.com/repos/${REPO}/contents`;
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+      return res.json();
+    }
+
+    function parseDate(folderName) {
+      const [mm, dd, yyyy] = folderName.split('-');
+      return new Date(`${yyyy}-${mm}-${dd}`);
+    }
+
+    function formatDate(folderName) {
+      const date = parseDate(folderName);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    function isToday(folderName) {
+      const folder = parseDate(folderName);
+      const today = new Date();
+      return (
+        folder.getFullYear() === today.getFullYear() &&
+        folder.getMonth() === today.getMonth() &&
+        folder.getDate() === today.getDate()
+      );
+    }
+
+    function isDateFolder(name) {
+      return /^\d{2}-\d{2}-\d{4}$/.test(name);
+    }
+
+    function formatReportTitle(name) {
+      return name
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+
+    function getDateParam() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('date');
+    }
+
+    async function buildSingleDate(dateKey) {
+      const container = document.getElementById('reports');
+      try {
+        const reports = await fetchJSON(`${API}/${dateKey}?ref=${BRANCH}`);
+        const reportDirs = reports.filter(item => item.type === 'dir');
+
+        if (reportDirs.length === 0) {
+          container.innerHTML = `<a class="back" href="./">← Back to all reports</a><p class="error">No reports found for this date.</p>`;
+          return;
+        }
+
+        let html = `<a class="back" href="./">← Back to all reports</a>`;
+        html += `<div class="date-heading">${formatDate(dateKey)}</div>`;
+        html += `<ul>`;
+        for (const report of reportDirs) {
+          const href = `${dateKey}/${report.name}/`;
+          const title = formatReportTitle(report.name);
+          html += `<li>📋 <a href="${href}">${title}</a></li>`;
+        }
+        html += `</ul>`;
+
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = `<a class="back" href="./">← Back to all reports</a><p class="error">Failed to load reports: ${err.message}</p>`;
+      }
+    }
+
+    async function buildAllReports() {
+      const container = document.getElementById('reports');
+      try {
+        const root = await fetchJSON(`${API}?ref=${BRANCH}`);
+        const dateFolders = root
+          .filter(item => item.type === 'dir' && isDateFolder(item.name))
+          .sort((a, b) => parseDate(b.name) - parseDate(a.name));
+
+        if (dateFolders.length === 0) {
+          container.innerHTML = '<p class="error">No report folders found.</p>';
+          return;
+        }
+
+        let html = '';
+        for (const dateFolder of dateFolders) {
+          const reports = await fetchJSON(`${API}/${dateFolder.name}?ref=${BRANCH}`);
+          const reportDirs = reports.filter(item => item.type === 'dir');
+          if (reportDirs.length === 0) continue;
+
+          const open = isToday(dateFolder.name) ? 'open' : '';
+
+          html += `<details ${open}>`;
+          html += `<summary><a href="?date=${dateFolder.name}" onclick="event.stopPropagation()">${formatDate(dateFolder.name)}</a></summary>`;
+          html += `<ul>`;
+          for (const report of reportDirs) {
+            const href = `${dateFolder.name}/${report.name}/`;
+            const title = formatReportTitle(report.name);
+            html += `<li>📋 <a href="${href}">${title}</a></li>`;
+          }
+          html += `</ul></details>`;
+        }
+
+        container.innerHTML = html || '<p class="error">No reports found.</p>';
+      } catch (err) {
+        container.innerHTML = `<p class="error">Failed to load reports: ${err.message}</p>`;
+      }
+    }
+
+    const dateParam = getDateParam();
+    if (dateParam && isDateFolder(dateParam)) {
+      buildSingleDate(dateParam);
+    } else {
+      buildAllReports();
+    }
+  </script>
+</body>
+</html>
